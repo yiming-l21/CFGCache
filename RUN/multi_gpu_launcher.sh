@@ -15,15 +15,21 @@ export HUGGINGFACE_HUB_CACHE="${HUGGINGFACE_HUB_CACHE:-$TEMP_ROOT/.huggingface}"
 export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$TEMP_ROOT/.transformers}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 mkdir -p "$TMPDIR" "$HF_HOME" "$HUGGINGFACE_HUB_CACHE" "$TRANSFORMERS_CACHE" || true
+export MODEL_DIR="/mnt/cfs/9n-das-admin/llm_models/flux-dev"
+export FLUX_MODEL_DIR="$MODEL_DIR"
+export FLUX_DEV="$MODEL_DIR/flux1-dev.safetensors"
+export AE="$MODEL_DIR/ae.safetensors"
+
 
 BACKEND="flux"
 PYTHON_PATH=""
 
 # 默认配置
-MODE="Taylor"  # Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa
+MODE="Taylor"  # Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, collect, ClusCa, Hi-ClusCa
+GPU_LIST="5"
 MODE_SET=false
 MODEL_NAME="flux-dev"  # flux-dev | flux-schnell
-INTERVAL="5"
+INTERVAL="7"
 MAX_ORDER="2"
 WIDTH=1024
 HEIGHT=1024
@@ -33,23 +39,21 @@ NUM_STEPS=50
 NUM_STEPS_SET=false
 LIMIT=200
 GUIDANCE=3.5
-HICACHE_SCALE_FACTOR="0.6"
+HICACHE_SCALE_FACTOR="0.5"
 FIRST_ENHANCE="3"
 PROMPT_FILE_DEFAULT_FLUX="$PROJECT_ROOT/resources/prompts/prompt.txt"
 PROMPT_FILE_DEFAULT_QWEN="$PROJECT_ROOT/models/qwen_image/prompts/DrawBench200.txt"
 PROMPT_FILE_DEFAULT_CHIPMUNK="$PROJECT_ROOT/resources/prompts/prompt.txt"
 PROMPT_FILE="$PROMPT_FILE_DEFAULT_FLUX"
 PROMPT_FILE_SET=false
-BASE_OUTPUT_DIR="$PROJECT_ROOT/results"
-BASE_OUTPUT_DIR_SET=false
+BASE_OUTPUT_DIR="$PROJECT_ROOT/results/$MODE"
+BASE_OUTPUT_DIR_SET=true
 WEIGHTS_DIR="$PROJECT_ROOT/resources/weights"
-GPU_LIST=""
 NUM_GPUS=""
 RUN_NAME=""
 AUTO_RUN_NAME=false
 KEEP_TEMP=false
 DRY_RUN=false
-MODEL_DIR=""
 QWEN_MODEL_PATH=""
 FORCE=false
 # Qwen-Image 环境默认配置（可通过环境变量覆盖）

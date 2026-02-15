@@ -409,22 +409,25 @@ def load_flow_model(
     return model
 
 
-def load_t5(device: str | torch.device = "cuda", max_length: int = 512) -> HFEmbedder:
-    # max length 64, 128, 256 and 512 should work (if your sequence is short enough)
-    # Prefer local override via env var / weights 目录；找不到再回退到远端 repo id
-    t5_source = os.getenv("T5_DIR")
-    if not t5_source:
-        project_root = _get_project_root()
-        local_dir = project_root / "weights" / "t5-v1_1-xxl"
-        if local_dir.is_dir():
-            t5_source = str(local_dir)
-    if not t5_source:
-        t5_source = "google/t5-v1_1-xxl"
-    return HFEmbedder(t5_source, max_length=max_length, torch_dtype=torch.bfloat16).to(device)
+def load_t5(device="cuda", max_length=512) -> HFEmbedder:
+    model_dir = os.getenv("MODEL_DIR")
+    if model_dir and Path(model_dir).is_dir():
+        t5 = {"type":"t5","tokenizer": str(Path(model_dir) / "tokenizer_2"),
+              "model": str(Path(model_dir) / "text_encoder_2")}
+        return HFEmbedder(t5, max_length=max_length, torch_dtype=torch.bfloat16).to(device)
+
+    # fallback（如果没给 model_dir）
+    return HFEmbedder("google/t5-v1_1-xxl", max_length=max_length, torch_dtype=torch.bfloat16).to(device)
 
 
 def load_clip(device: str | torch.device = "cuda") -> HFEmbedder:
-    # Prefer local override via env var / weights 目录；找不到再回退到远端 repo id
+    # 1) 优先用 model_dir（你已经通过 --model_dir 传进来了，通常会在外层设置成环境变量或全局变量）
+    model_dir = os.getenv("MODEL_DIR")  # 你可以在 sample.sh 里 export MODEL_DIR="$MODEL_DIR"
+    if model_dir and os.path.isdir(model_dir):
+        clip_source = {"type":"clip","tokenizer": f"{model_dir}/tokenizer", "model": f"{model_dir}/text_encoder"}
+        return HFEmbedder(clip_source, max_length=77, torch_dtype=torch.bfloat16).to(device)
+
+    # 2) 否则走你原来的本地 weights 逻辑
     clip_source = os.getenv("CLIP_DIR")
     if not clip_source:
         project_root = _get_project_root()
