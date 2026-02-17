@@ -57,6 +57,11 @@ HEIGHT=1024
 NUM_STEPS=50
 NUM_STEPS_SET=false
 LIMIT=10
+# --- True CFG defaults --------------------------------------------------------
+TRUE_CFG_SCALE="1.0"          # >1 才启用 true CFG
+NEGATIVE_PROMPT=""            # 单个负向 prompt（对所有 prompt 生效）
+NEGATIVE_PROMPT_SET=false
+NEGATIVE_PROMPT_FILE=""       # 逐行负向 prompt 文件（与 prompt_file 行数对齐）
 HICACHE_SCALE_FACTOR="0.7"
 ANALYTIC_SIGMA_ALPHA=""
 ANALYTIC_SIGMA_MAX=""
@@ -83,6 +88,9 @@ show_help() {
     echo "  -m, --mode MODE           缓存模式 (Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa) [默认: Taylor]"
     echo "  --model_name NAME         FLUX 模型 (flux-dev|flux-schnell) [默认: flux-dev]"
     echo "  --model_dir DIR          指定本地 FLUX 权重目录(包含 flow 与 ae)"
+    echo "  --true_cfg_scale VAL        True CFG scale (>1 启用 true CFG) [默认: 1.0]"
+    echo "  --negative_prompt TEXT      全局负向 prompt（对所有 prompt 生效）"
+    echo "  --negative_prompt_file FILE 逐行负向 prompt 文件（与 prompt_file 对齐）"
     echo "  -i, --interval INTERVAL   间隔值 [默认: 1]"
     echo "  -o, --max_order ORDER     最大阶数 [默认: 1]"
     echo "  -d, --output_dir DIR      输出目录 [默认: $PROJECT_ROOT/results/flux]"
@@ -137,6 +145,19 @@ while [[ $# -gt 0 ]]; do
             ;;
         -p|--prompt_file)
             PROMPT_FILE="$2"
+            shift 2
+            ;;
+        --true_cfg_scale)
+            TRUE_CFG_SCALE="$2"
+            shift 2
+            ;;
+        --negative_prompt)
+            NEGATIVE_PROMPT="$2"
+            NEGATIVE_PROMPT_SET=true
+            shift 2
+            ;;
+        --negative_prompt_file)
+            NEGATIVE_PROMPT_FILE="$2"
             shift 2
             ;;
         -w|--width)
@@ -411,6 +432,15 @@ fi
 
 echo "图像尺寸: ${WIDTH}x${HEIGHT}"
 echo "采样步数: $NUM_STEPS"
+echo "True CFG scale: $TRUE_CFG_SCALE"
+if [[ -n "$NEGATIVE_PROMPT_FILE" ]]; then
+    echo "Negative prompt file: $NEGATIVE_PROMPT_FILE"
+elif [[ -n "$NEGATIVE_PROMPT" ]]; then
+    echo "Negative prompt: $NEGATIVE_PROMPT"
+else
+    echo "Negative prompt: (none)"
+fi
+
 echo "测试数量限制: $LIMIT"
 echo "HiCache缩放因子: $HICACHE_SCALE_FACTOR"
 echo "First enhance: $FIRST_ENHANCE"
@@ -458,6 +488,22 @@ if [[ "$MODE" == "HiCache-Analytic" ]]; then
     fi
 fi
 
+CFG_ARGS=()
+
+if [[ -n "$TRUE_CFG_SCALE" ]]; then
+  CFG_ARGS+=(--true_cfg_scale "$TRUE_CFG_SCALE")
+fi
+
+if [[ -n "$NEGATIVE_PROMPT_FILE" ]]; then
+  if [[ ! -f "$NEGATIVE_PROMPT_FILE" ]]; then
+    echo "[ERROR] negative_prompt_file 不存在: $NEGATIVE_PROMPT_FILE"
+    exit 1
+  fi
+  CFG_ARGS+=(--negative_prompt_file "$NEGATIVE_PROMPT_FILE")
+elif [[ "$NEGATIVE_PROMPT_SET" == "true" ]]; then
+  CFG_ARGS+=(--negative_prompt "$NEGATIVE_PROMPT")
+fi
+
 # 执行采样
 echo "开始生成图像..."
 if [[ -z "${CUDA_VISIBLE_DEVICES:-}" ]]; then
@@ -480,7 +526,8 @@ python "$PROJECT_ROOT/models/flux/src/sample.py" \
   --start_index "$START_INDEX" \
   --hicache_scale "$HICACHE_SCALE_FACTOR" \
   "${CLUSCA_ARGS[@]}" \
-  "${ANALYTIC_ARGS[@]}"
+  "${ANALYTIC_ARGS[@]}" \
+  "${CFG_ARGS[@]}"
 
 PYTHON_EXIT_CODE=$?
 if [[ $PYTHON_EXIT_CODE -ne 0 ]]; then

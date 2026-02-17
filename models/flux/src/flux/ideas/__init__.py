@@ -1,1 +1,1 @@
-from .cache_denoise import denoise_cache
+from .cache_denoise import denoise_cache,denoise_cache_cfg

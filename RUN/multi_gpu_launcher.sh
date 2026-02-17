@@ -25,8 +25,8 @@ BACKEND="flux"
 PYTHON_PATH=""
 
 # 默认配置
-MODE="Taylor"  # Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, collect, ClusCa, Hi-ClusCa
-GPU_LIST="5"
+MODE="original"  # Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, collect, ClusCa, Hi-ClusCa
+GPU_LIST="6"
 MODE_SET=false
 MODEL_NAME="flux-dev"  # flux-dev | flux-schnell
 INTERVAL="7"
@@ -38,6 +38,11 @@ HEIGHT_SET=false
 NUM_STEPS=50
 NUM_STEPS_SET=false
 LIMIT=200
+# True CFG
+TRUE_CFG_SCALE="1.5"          # 1.0 表示不开 True-CFG（退化成原 cfg 或无 cfg）
+NEGATIVE_PROMPT="animation"            # 全局负向 prompt
+NEGATIVE_PROMPT_SET=true
+NEGATIVE_PROMPT_FILE=""       # 逐行负向 prompt（与 prompt_file 行数对齐）
 GUIDANCE=3.5
 HICACHE_SCALE_FACTOR="0.5"
 FIRST_ENHANCE="3"
@@ -89,6 +94,9 @@ show_help() {
     echo "  -s, --num_steps STEPS       采样步数 [默认: 50]"
     echo "  -l, --limit LIMIT           Prompt 限制数量 [默认: 10]"
     echo "      --guidance VALUE        Chipmunk-Flux: guidance 参数 [默认: 3.5]"
+    echo "      --true_cfg_scale VAL      True CFG scale (>1 启用 true CFG) [默认: 1.0]"
+    echo "      --negative_prompt TEXT    全局负向 prompt（对所有 prompt 生效）"
+    echo "      --negative_prompt_file FILE 逐行负向 prompt 文件（与 prompt_file 行数对齐）"
     echo "      --python PATH           指定运行 multi_gpu_launcher.py 的 Python 解释器"
     echo "  --gpus IDS                  指定 GPU 列表 (示例: 0,1,3)"
     echo "  --num_gpus N                未指定 --gpus 时自动从 0 开始取 N 张卡"
@@ -167,6 +175,18 @@ while [[ $# -gt 0 ]]; do
             ;;
         --guidance)
             GUIDANCE="$2"
+            shift 2
+            ;;
+        --true_cfg_scale|--true-cfg-scale)
+            TRUE_CFG_SCALE="$2"
+            shift 2
+            ;;
+        --negative_prompt|--negative-prompt)
+            NEGATIVE_PROMPT="$2"
+            shift 2
+            ;;
+        --negative_prompt_file|--negative-prompt-file)
+            NEGATIVE_PROMPT_FILE="$2"
             shift 2
             ;;
         --gpus)
@@ -554,6 +574,7 @@ REPORT_PATH=$(mktemp "$PROJECT_ROOT/RUN/tmp_multi_gpu_launcher_report.XXXXXX.jso
 
 cleanup_tmp_files() {
     rm -f "$TEMP_PROMPT_FILE" "$REPORT_PATH"
+    [[ -n "${TEMP_NEG_PROMPT_FILE:-}" ]] && rm -f "$TEMP_NEG_PROMPT_FILE"
 }
 trap cleanup_tmp_files EXIT
 
@@ -565,6 +586,23 @@ fi
 
 START_LINE=$((START_OFFSET + 1))
 tail -n +"$START_LINE" "$PROMPT_FILE" | head -n "$REMAINING_LIMIT" > "$TEMP_PROMPT_FILE"
+TEMP_NEG_PROMPT_FILE=""
+if [[ -n "$NEGATIVE_PROMPT_FILE" ]]; then
+    if [[ ! -f "$NEGATIVE_PROMPT_FILE" ]]; then
+        echo "[ERROR] Negative prompt 文件不存在: $NEGATIVE_PROMPT_FILE"
+        exit 1
+    fi
+    TEMP_NEG_PROMPT_FILE=$(mktemp "$PROJECT_ROOT/RUN/tmp_multi_gpu_launcher_neg_prompts.XXXXXX.txt") || {
+        echo "[ERROR] 创建临时 Negative Prompt 文件失败"
+        exit 1
+    }
+    tail -n +"$START_LINE" "$NEGATIVE_PROMPT_FILE" | head -n "$REMAINING_LIMIT" > "$TEMP_NEG_PROMPT_FILE"
+
+    if [[ ! -s "$TEMP_NEG_PROMPT_FILE" ]]; then
+        echo "[ERROR] Negative prompt 文件在切分后为空：$TEMP_NEG_PROMPT_FILE"
+        exit 1
+    fi
+fi
 
 if [[ ! -s "$TEMP_PROMPT_FILE" ]]; then
     echo "[INFO] 无剩余 Prompt 可供生成，退出。"
@@ -589,7 +627,13 @@ if [[ "$BACKEND" == "flux" ]]; then
         --hicache_scale "$HICACHE_SCALE_FACTOR"
         --model_name "$MODEL_NAME"
     )
+    SAMPLE_ARGS+=(--true_cfg_scale "$TRUE_CFG_SCALE")
 
+    if [[ -n "$TEMP_NEG_PROMPT_FILE" ]]; then
+        SAMPLE_ARGS+=(--negative_prompt_file "$TEMP_NEG_PROMPT_FILE")
+    elif [[ "$NEGATIVE_PROMPT_SET" == "true" ]]; then
+        SAMPLE_ARGS+=(--negative_prompt "$NEGATIVE_PROMPT")
+    fi
     if [[ "$MODE" == "ClusCa" || "$MODE" == "Hi-ClusCa" ]]; then
         SAMPLE_ARGS+=(
             --clusca_fresh_threshold "$CLUSCA_FRESH_THRESHOLD"

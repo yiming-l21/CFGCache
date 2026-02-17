@@ -197,6 +197,69 @@ def sanitize_sample_args(sample_args: Iterable[str]) -> List[str]:
                 raise ValueError(f"Launcher manages '{flag}'; remove it from forwarded arguments: {args}")
     return args
 
+def _flag_aliases(flag: str) -> set[str]:
+    """Return aliases for a flag with '_' vs '-'."""
+    if flag.startswith("--"):
+        core = flag[2:]
+        return {"--" + core, "--" + core.replace("_", "-")}
+    return {flag}
+
+
+def extract_arg_value(args: List[str], flag: str) -> str | None:
+    """Return value for '--flag value' or '--flag=value' in args. Supports '_'/'-' aliases."""
+    aliases = _flag_aliases(flag)
+    i = 0
+    while i < len(args):
+        tok = args[i]
+        # --flag value
+        if tok in aliases:
+            if i + 1 >= len(args):
+                raise ValueError(f"{tok} requires a value")
+            return args[i + 1]
+        # --flag=value
+        for a in aliases:
+            if tok.startswith(a + "="):
+                return tok.split("=", 1)[1]
+        i += 1
+    return None
+
+
+def replace_arg_value(args: List[str], flag: str, new_value: str) -> List[str]:
+    """Replace '--flag value' or '--flag=value' (supports '_'/'-') with new_value."""
+    aliases = _flag_aliases(flag)
+    out: List[str] = []
+    i = 0
+    replaced = False
+    while i < len(args):
+        tok = args[i]
+        # --flag value
+        if tok in aliases:
+            if i + 1 >= len(args):
+                raise ValueError(f"{tok} requires a value")
+            out.extend([tok, new_value])
+            i += 2
+            replaced = True
+            continue
+        # --flag=value
+        matched = False
+        for a in aliases:
+            if tok.startswith(a + "="):
+                out.append(a + "=" + new_value)
+                i += 1
+                replaced = True
+                matched = True
+                break
+        if matched:
+            continue
+
+        out.append(tok)
+        i += 1
+
+    if not replaced:
+        # default append using canonical spelling
+        out.extend([flag, new_value])
+    return out
+
 
 def build_output_dir(stage_root: Path, gpu: str) -> Path:
     return stage_root / f"gpu{gpu}"
@@ -468,6 +531,22 @@ def main() -> int:
             print(f"[INFO] GPUs {', '.join(unused_gpus)} idle (no prompts assigned)")
 
     extra_args = sanitize_sample_args(args.sample_args)
+    # ---- True CFG: shard negative_prompt_file if provided ----
+    neg_file = extract_arg_value(extra_args, "--negative_prompt_file")
+    neg_prompts_active: List[str] | None = None
+    if neg_file:
+        neg_path = Path(neg_file)
+        if not neg_path.is_absolute():
+            neg_path = (PROJECT_ROOT / neg_path).resolve()
+        if not neg_path.exists():
+            raise FileNotFoundError(f"negative_prompt_file not found: {neg_path}")
+
+        neg_prompts_active = read_prompts(neg_path)
+        if len(neg_prompts_active) != len(active_prompts):
+            raise ValueError(
+                f"negative_prompt_file lines ({len(neg_prompts_active)}) != active prompts ({len(active_prompts)}). "
+                "They must align 1:1 after preprocessing (e.g., after applying limit/start_offset)."
+            )
 
     base_output_dir = Path(args.base_output_dir).resolve()
     default_root = (PROJECT_ROOT / "results").resolve()
@@ -516,13 +595,23 @@ def main() -> int:
                 job.placeholder_image = placeholder
                 backend_output_dir = full_output_dir
 
+            shard_extra_args = extra_args
+            if neg_prompts_active is not None:
+                shard_negs = neg_prompts_active[start_index : start_index + len(shard_prompts)]
+                if len(shard_negs) != len(shard_prompts):
+                    raise ValueError("Negative shard length mismatch (should never happen).")
+                shard_neg_file = write_prompt_shard(shard_negs, tmp_root, f"{gpu}_neg")
+                shard_extra_args = replace_arg_value(
+                    shard_extra_args, "--negative_prompt_file", str(shard_neg_file)
+                )
+
             job.process = launch_process(
                 gpu=gpu,
                 prompt_file=shard_file,
                 mode=args.mode,
                 output_dir=backend_output_dir,
                 start_index=global_start,
-                extra_args=extra_args,
+                extra_args=shard_extra_args,
                 dry_run=args.dry_run,
                 backend=args.backend,
                 prompts=shard_prompts,

@@ -9,7 +9,7 @@ from transformers import pipeline
 from tqdm import tqdm
 
 from flux.sampling import get_noise, get_schedule, prepare, unpack, denoise_test_FLOPs
-from flux.ideas import denoise_cache
+from flux.ideas import denoise_cache,denoise_cache_cfg
 from flux.util import configs, embed_watermark, load_ae, load_clip, load_flow_model, load_t5
 
 NSFW_THRESHOLD = 0.85  # NSFW score threshold
@@ -29,6 +29,9 @@ class SamplingOptions:
     output_dir: str  # Output directory
     start_index: int  # Starting index offset for output numbering
     add_sampling_metadata: bool  # Whether to add metadata
+    true_cfg_scale: float          # True CFG (>=1); 1 means off
+    negative_prompt: str | None    # global negative prompt for all prompts
+    negative_prompts: list[str] | None  # optional per-prompt negatives
     use_nsfw_filter: bool  # Whether to enable NSFW filter
     test_FLOPs: bool  # Whether in FLOPs test mode (no actual image generation)
     cache_mode: str  # Cache mode ('original', 'ToCa', 'Taylor', 'HiCache', 'Delta', 'collect')
@@ -170,9 +173,22 @@ def main(opts: SamplingOptions):
 
             # Prepare prompts
             # batch_prompts is a list containing the prompts in the current batch
-            inp = prepare(t5, clip, x, prompt=batch_prompts)
+            inp_cond = prepare(t5, clip, x, prompt=batch_prompts)
+
+            do_true_cfg = (opts.true_cfg_scale > 1.0) and (
+                (opts.negative_prompts is not None) or (opts.negative_prompt is not None)
+            )
+            if do_true_cfg:
+                if opts.negative_prompts is not None:
+                    batch_neg_prompts = opts.negative_prompts[prompt_start:prompt_end]
+                else:
+                    batch_neg_prompts = [opts.negative_prompt] * len(batch_prompts)
+                inp_uncond = prepare(t5, clip, x, prompt=batch_neg_prompts)
+            else:
+                inp_uncond = None
+
             timesteps = get_schedule(
-                opts.num_steps, inp["img"].shape[1], shift=(model_name != "flux-schnell")
+                opts.num_steps, inp_cond["img"].shape[1], shift=(model_name != "flux-schnell")
             )
 
             # Denoising
@@ -200,33 +216,68 @@ def main(opts: SamplingOptions):
                             "target_modules": opts.feature_modules,
                             "target_streams": opts.feature_streams,
                         }
-
-                    x = denoise_cache(
-                        model,
-                        **inp,
-                        timesteps=timesteps,
-                        guidance=opts.guidance,
-                        cache_mode=opts.cache_mode,
-                        interval=opts.interval,
-                        max_order=opts.max_order,
-                        first_enhance=opts.first_enhance,
-                        hicache_scale=opts.hicache_scale,
-                        # ClusCa parameters
-                        clusca_fresh_threshold=opts.clusca_fresh_threshold,
-                        clusca_cluster_num=opts.clusca_cluster_num,
-                        clusca_cluster_method=opts.clusca_cluster_method,
-                        clusca_k=opts.clusca_k,
-                        clusca_propagation_ratio=opts.clusca_propagation_ratio,
-                         analytic_sigma_alpha=opts.analytic_sigma_alpha,
-                         analytic_sigma_max=opts.analytic_sigma_max,
-                         analytic_sigma_beta=opts.analytic_sigma_beta,
-                         analytic_sigma_eps=opts.analytic_sigma_eps,
-                         analytic_sigma_q_quantile=opts.analytic_sigma_q_quantile,
-                         analytic_sigma_smooth=opts.analytic_sigma_smooth,
-                        # Feature collection parameters
-                        enable_feature_collection=feature_collection_enabled,
-                        feature_collection_config=feature_config,
-                    )
+                    if not do_true_cfg:
+                        x = denoise_cache(
+                            model,
+                            **inp_cond,
+                            timesteps=timesteps,
+                            guidance=opts.guidance,
+                            cache_mode=opts.cache_mode,
+                            interval=opts.interval,
+                            max_order=opts.max_order,
+                            first_enhance=opts.first_enhance,
+                            hicache_scale=opts.hicache_scale,
+                            # ClusCa parameters
+                            clusca_fresh_threshold=opts.clusca_fresh_threshold,
+                            clusca_cluster_num=opts.clusca_cluster_num,
+                            clusca_cluster_method=opts.clusca_cluster_method,
+                            clusca_k=opts.clusca_k,
+                            clusca_propagation_ratio=opts.clusca_propagation_ratio,
+                            analytic_sigma_alpha=opts.analytic_sigma_alpha,
+                            analytic_sigma_max=opts.analytic_sigma_max,
+                            analytic_sigma_beta=opts.analytic_sigma_beta,
+                            analytic_sigma_eps=opts.analytic_sigma_eps,
+                            analytic_sigma_q_quantile=opts.analytic_sigma_q_quantile,
+                            analytic_sigma_smooth=opts.analytic_sigma_smooth,
+                            # Feature collection parameters
+                            enable_feature_collection=feature_collection_enabled,
+                            feature_collection_config=feature_config,
+                        )
+                    else:
+                        x = denoise_cache_cfg(
+                            model,
+                            img=inp_cond["img"],
+                            img_ids=inp_cond["img_ids"],
+                            txt=inp_cond["txt"],
+                            txt_ids=inp_cond["txt_ids"],
+                            vec=inp_cond["vec"],
+                            neg_txt=inp_uncond["txt"],
+                            neg_txt_ids=inp_uncond["txt_ids"],
+                            neg_vec=inp_uncond["vec"],
+                            true_cfg_scale=opts.true_cfg_scale,
+                            timesteps=timesteps,
+                            guidance=opts.guidance,
+                            cache_mode=opts.cache_mode,
+                            interval=opts.interval,
+                            max_order=opts.max_order,
+                            first_enhance=opts.first_enhance,
+                            hicache_scale=opts.hicache_scale,
+                            # ClusCa parameters
+                            clusca_fresh_threshold=opts.clusca_fresh_threshold,
+                            clusca_cluster_num=opts.clusca_cluster_num,
+                            clusca_cluster_method=opts.clusca_cluster_method,
+                            clusca_k=opts.clusca_k,
+                            clusca_propagation_ratio=opts.clusca_propagation_ratio,
+                            analytic_sigma_alpha=opts.analytic_sigma_alpha,
+                            analytic_sigma_max=opts.analytic_sigma_max,
+                            analytic_sigma_beta=opts.analytic_sigma_beta,
+                            analytic_sigma_eps=opts.analytic_sigma_eps,
+                            analytic_sigma_q_quantile=opts.analytic_sigma_q_quantile,
+                            analytic_sigma_smooth=opts.analytic_sigma_smooth,
+                            # Feature collection parameters
+                            enable_feature_collection=feature_collection_enabled,
+                            feature_collection_config=feature_config,
+                        )
                     # x = search_denoise_cache(model, **inp, timesteps=timesteps, guidance=opts.guidance, interval=opts.interval, max_order=opts.max_order, first_enhance=opts.first_enhance)
 
                 # Handle feature collection
@@ -549,6 +600,13 @@ def app():
     parser.add_argument("--guidance", type=float, default=3.5, help="Guidance value.")
     parser.add_argument("--seed", type=int, default=0, help="Random seed.")
     parser.add_argument("--num_images_per_prompt", type=int, default=1, help="Number of images per prompt.")
+    parser.add_argument("--true_cfg_scale", type=float, default=1.0,
+                    help="True CFG scale > 1 enables dual-branch CFG (cond+uncond).")
+    parser.add_argument("--negative_prompt", type=str, default=None,
+                        help="Negative prompt (shared for all prompts).")
+    parser.add_argument("--negative_prompt_file", type=str, default=None,
+                        help="Optional: file containing per-prompt negative prompts, line by line.")
+
     parser.add_argument("--batch_size", type=int, default=1, help="Batch size (prompt batching).")
     parser.add_argument(
         "--model_name",
@@ -690,12 +748,17 @@ def app():
     args = parser.parse_args()
 
     prompts = read_prompts(args.prompt_file)
-
+    negative_prompts = None
+    if args.negative_prompt_file is not None:
+        negative_prompts = read_prompts(args.negative_prompt_file)
     opts = SamplingOptions(
         prompts=prompts,
         width=args.width,
         height=args.height,
         num_steps=args.num_steps,
+        true_cfg_scale=args.true_cfg_scale,
+        negative_prompt=args.negative_prompt,
+        negative_prompts=negative_prompts,
         guidance=args.guidance,
         seed=args.seed,
         num_images_per_prompt=args.num_images_per_prompt,
