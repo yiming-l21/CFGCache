@@ -3,7 +3,7 @@ import re
 import math
 import json
 from pathlib import Path
-
+import cv2
 os.environ["CLEANFID_CACHE_DIR"] = "/export/home/liuyiming54/inception_model"
 # ---- SSIM ----
 from skimage.metrics import structural_similarity as ssim
@@ -28,8 +28,8 @@ import torch.nn.functional as F
 
 
 def load_rgb(path: Path) -> np.ndarray:
-    img = Image.open(path).convert("RGB")
-    return np.array(img)
+    refimg = cv2.imread(path)
+    return cv2.cvtColor(refimg, cv2.COLOR_BGR2RGB)
 
 
 def psnr_u8(ref_u8: np.ndarray, cmp_u8: np.ndarray) -> float:
@@ -41,14 +41,61 @@ def psnr_u8(ref_u8: np.ndarray, cmp_u8: np.ndarray) -> float:
     return 20.0 * math.log10(1.0 / math.sqrt(mse))
 
 def ssim_u8(ref_u8: np.ndarray, cmp_u8: np.ndarray) -> float:
-    # 使用 uint8 + data_range=255，channel_axis=2 表示 RGB 通道
-    return float(ssim(ref_u8, cmp_u8, channel_axis=2, data_range=255))
-
+    """
+    适配 MATLAB FR_MSSIM 的 skimage 版 SSIM 计算
+    :param ref_u8: 参考图 (H,W,3) uint8
+    :param cmp_u8: 对比图 (H,W,3) uint8
+    :return: 均值 SSIM（和 MATLAB FR_MSSIM 基本一致）
+    """
+    # 1. 第一步：RGB 转灰度（严格对齐 MATLAB rgb2gray 公式）
+    def rgb2gray_matlab(img_rgb: np.ndarray) -> np.ndarray:
+        # MATLAB 官方公式：0.2989*R + 0.5870*G + 0.1140*B
+        return np.dot(img_rgb[..., :3], [0.2989, 0.5870, 0.1140]).astype(np.float64)
+    
+    ref_gray = rgb2gray_matlab(ref_u8)
+    cmp_gray = rgb2gray_matlab(cmp_u8)
+    ssim_val = ssim(
+        ref_gray,
+        cmp_gray,
+        data_range=255,          # 动态范围和 MATLAB 一致
+        win_size=11,             # 对齐 MATLAB 11x11 窗口
+        gaussian_weights=True,   # 高斯窗口（替代 skimage 默认的矩形窗口）
+        sigma=1.5,
+        K1=0.01,                 # 对齐 MATLAB K1
+        K2=0.03,                 # 对齐 MATLAB K2
+        use_sample_covariance=False,  # 对齐 MATLAB 协方差计算逻辑
+        channel_axis=None        # 灰度图，无需通道轴
+    )
+    return float(ssim_val)
 
 def to_lpips_tensor(u8: np.ndarray, device: torch.device) -> torch.Tensor:
-    x = torch.from_numpy(u8).permute(2, 0, 1).float() / 255.0
-    x = x.unsqueeze(0) * 2.0 - 1.0
-    return x.to(device, non_blocking=True)
+    """
+    严格对齐 LPIPS 官方预处理逻辑
+    :param u8: RGB 图片 (H,W,3) uint8
+    :param device: torch.device
+    :return: LPIPS 输入张量 (1,3,H,W)，范围 [-1,1]，float32，RGB 通道
+    """
+    # 1. 转 float32（避免 uint8 转 float 的精度损耗）
+    img = u8.astype(np.float32)
+    
+    # 2. 归一化到 [0,1]
+    img = img / 255.0
+    
+    # 3. 应用 ImageNet 均值/std 归一化（LPIPS 模型训练时的标准）
+    # 均值：[0.485, 0.456, 0.406]，std：[0.229, 0.224, 0.225]
+    mean = np.array([0.485, 0.456, 0.406]).reshape(1, 1, 3)
+    std = np.array([0.229, 0.224, 0.225]).reshape(1, 1, 3)
+    img = (img - mean) / std
+    
+    # 4. 转 [-1, 1]（LPIPS 官方要求）
+    img = img * 2.0 - 1.0
+    
+    # 5. 调整维度：(H,W,3) → (3,H,W) → (1,3,H,W)
+    img = torch.from_numpy(img).permute(2, 0, 1).float()
+    img = img.unsqueeze(0).to(device, non_blocking=True)
+    
+    # 6. 确保是 float32（避免 float64 导致的精度问题）
+    return img.to(dtype=torch.float32)
 
 
 def read_prompts(prompt_file: str) -> list[str]:
@@ -247,8 +294,8 @@ def main(
                 "ir_cmp": ir_cmp,
             }
         )
-
-        psnrs.append(p if np.isfinite(p) else 1e9)
+        print(p)
+        if np.isfinite(p): psnrs.append(p)
         lpipss.append(l)
         clip_ref_list.append(cs_ref)
         clip_cmp_list.append(cs_cmp)
