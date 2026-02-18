@@ -31,6 +31,87 @@ def cal_type(cache_dic, current):
         if current["step"] == 0:
             current["activated_steps"].append(current["step"])
         return
+    # =========================
+    # TeaCache branch (paper-faithful)
+    # =========================
+    if cache_dic.get("mode") == "TeaCache":
+        tc = cache_dic.get("teacache", None)
+        if tc is None or (not cache_dic.get("teacache_enable", True)):
+            # fallback: always full
+            current["type"] = "full"
+            if current["step"] == 0:
+                current["activated_steps"].append(current["step"])
+            return
+
+        step = current["step"]
+        T = int(tc.get("num_steps", current.get("num_steps", 0) or 0))
+
+        # This must be provided by model forward BEFORE calling cal_type
+        mod_inp = current.get("teacache_modulated_inp", None)
+
+        # default: full
+        current["type"] = "full"
+
+        # cnt-based hard guard (paper): first & last step always full
+        cnt = int(tc.get("cnt", 0))
+        if cnt == 0 or (T > 0 and cnt == T - 1):
+            tc["accumulated_rel_l1_distance"] = 0.0
+            tc["previous_modulated_input"] = mod_inp
+            current["type"] = "full"
+            current["activated_steps"].append(step)
+
+            # update counter (paper)
+            tc["cnt"] = cnt + 1
+            if T > 0 and tc["cnt"] == T:
+                tc["cnt"] = 0
+            return
+
+        # If we cannot compute decision -> full
+        prev = tc.get("previous_modulated_input", None)
+        if mod_inp is None or prev is None:
+            tc["previous_modulated_input"] = mod_inp
+            current["type"] = "full"
+            current["activated_steps"].append(step)
+
+            # update counter
+            tc["cnt"] = cnt + 1
+            if T > 0 and tc["cnt"] == T:
+                tc["cnt"] = 0
+            return
+
+        # rel l1 distance (paper): mean(|x_t - x_{t-1}|) / mean(|x_{t-1}|)
+        eps = 1e-6
+        denom = prev.abs().mean() + eps
+        rel = (mod_inp - prev).abs().mean() / denom
+        rel = float(rel.detach().cpu())
+
+        # polynomial rescale (paper coefficients)
+        coeff = tc.get("coefficients", None)
+        if coeff is not None:
+            # 4th order poly: a x^4 + b x^3 + c x^2 + d x + e
+            # computed as (((a*x + b)*x + c)*x + d)*x + e
+            rel_scaled = (((coeff[0] * rel + coeff[1]) * rel + coeff[2]) * rel + coeff[3]) * rel + coeff[4]
+        else:
+            rel_scaled = rel
+
+        tc["accumulated_rel_l1_distance"] = float(tc.get("accumulated_rel_l1_distance", 0.0)) + float(rel_scaled)
+
+        # decision
+        if tc["accumulated_rel_l1_distance"] < float(tc.get("rel_l1_thresh", 0.6)):
+            current["type"] = "TeaCacheSkip"
+            # do NOT append activated_steps when skipping
+        else:
+            current["type"] = "full"
+            tc["accumulated_rel_l1_distance"] = 0.0
+            current["activated_steps"].append(step)
+
+        # update prev input and counter (paper)
+        tc["previous_modulated_input"] = mod_inp
+        tc["cnt"] = cnt + 1
+        if T > 0 and tc["cnt"] == T:
+            tc["cnt"] = 0
+        return
+
 
     # 🔥 修复：在 original 模式下，所有步骤都应该是 'full' 类型
     if (

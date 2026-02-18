@@ -89,6 +89,32 @@ def cache_init(
         cache_dic["soft_fresh_weight"] = 0.0
         cache_dic["max_order"] = 0
         cache_dic["first_enhance"] = 3
+    elif mode == "TeaCache":
+        # ===== 通用字段：避免 cal_type / 其它逻辑 KeyError =====
+        cache_dic["cache_type"] = "random"        # TeaCache 不用 token selection，但保底
+        cache_dic["cache_index"] = cache_index
+        cache_dic["cache"] = cache
+
+        cache_dic["fresh_ratio_schedule"] = "TeaCache"
+        cache_dic["fresh_ratio"] = 0.0          
+        cache_dic["fresh_threshold"] = 1         
+        cache_dic["cal_threshold"] = 1          
+        cache_dic["force_fresh"] = "global"
+        cache_dic["soft_fresh_weight"] = 0.0
+        cache_dic["max_order"] = 0
+        cache_dic["first_enhance"] = 3           
+
+        model_kwargs = model_kwargs or {}
+        cache_dic["teacache_enable"] = True
+        cache_dic["teacache"] = {
+            "cnt": 0,
+            "num_steps": len(timesteps),   
+            "rel_l1_thresh": model_kwargs.get("rel_l1_thresh", 0.8),
+            "accumulated_rel_l1_distance": 0.0,
+            "previous_modulated_input": None,   
+            "previous_residual": None,          
+            "coefficients": [4.98651651e+02, -2.83781631e+02, 5.58554382e+01, -3.82021401e+00, 2.64230861e-01],
+        }
 
     elif mode == "ToCa":
         cache_dic["cache_type"] = "attention"

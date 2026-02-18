@@ -22,6 +22,7 @@ def denoise_cache(
     max_order: int = 1,
     first_enhance: int = 3,
     hicache_scale: float = 0.5,
+    rel_l1_thresh: float = 0.6,
     # ClusCa parameters
     clusca_fresh_threshold: int | None = None,
     clusca_cluster_num: int | None = None,
@@ -67,6 +68,8 @@ def denoise_cache(
         model_kwargs = clusca_kwargs
     elif cache_mode == "HiCache-Analytic":
         model_kwargs = analytic_kwargs
+    elif cache_mode == "TeaCache":
+        model_kwargs = {"rel_l1_thresh":rel_l1_thresh}
     else:
         model_kwargs = None
     cache_dic, current = cache_init(
@@ -137,6 +140,7 @@ def denoise_cache_cfg(
     max_order: int = 1,
     first_enhance: int = 3,
     hicache_scale: float = 0.5,
+    rel_l1_thresh: float = 0.6,
     # ClusCa parameters
     clusca_fresh_threshold: int | None = None,
     clusca_cluster_num: int | None = None,
@@ -191,6 +195,8 @@ def denoise_cache_cfg(
         model_kwargs = clusca_kwargs
     elif cache_mode == "HiCache-Analytic":
         model_kwargs = analytic_kwargs
+    elif cache_mode == "TeaCache":
+        model_kwargs = {"rel_l1_thresh":rel_l1_thresh}
     else:
         model_kwargs = None
 

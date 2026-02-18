@@ -19,14 +19,16 @@ export MODEL_DIR="/mnt/cfs/9n-das-admin/llm_models/flux-dev"
 export FLUX_MODEL_DIR="$MODEL_DIR"
 export FLUX_DEV="$MODEL_DIR/flux1-dev.safetensors"
 export AE="$MODEL_DIR/ae.safetensors"
-
+export TORCHDYNAMO_DISABLE=1
+export TORCHINDUCTOR_DISABLE=1
+export PYTORCH_DISABLE_CUDA_COMPILE=1
 
 BACKEND="flux"
 PYTHON_PATH=""
 
 # 默认配置
-MODE="original"  # Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, collect, ClusCa, Hi-ClusCa
-GPU_LIST="6"
+MODE="TeaCache"  # TeaCache, Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa
+GPU_LIST="5"
 MODE_SET=false
 MODEL_NAME="flux-dev"  # flux-dev | flux-schnell
 INTERVAL="7"
@@ -45,6 +47,7 @@ NEGATIVE_PROMPT_SET=true
 NEGATIVE_PROMPT_FILE=""       # 逐行负向 prompt（与 prompt_file 行数对齐）
 GUIDANCE=3.5
 HICACHE_SCALE_FACTOR="0.5"
+REL_L1_THRESH="0.8"
 FIRST_ENHANCE="3"
 PROMPT_FILE_DEFAULT_FLUX="$PROJECT_ROOT/resources/prompts/prompt.txt"
 PROMPT_FILE_DEFAULT_QWEN="$PROJECT_ROOT/models/qwen_image/prompts/DrawBench200.txt"
@@ -102,6 +105,7 @@ show_help() {
     echo "  --num_gpus N                未指定 --gpus 时自动从 0 开始取 N 张卡"
     echo "  --run-name NAME             自定义运行名 (用于输出目录)"
     echo "  --hicache_scale FACTOR      HiCache 多项式缩放因子 [默认: 0.7]"
+    echo "  --rel_l1_thresh THRESH.   TeaCache的阈值 [默认: 0.6]"
     echo "  --model_dir DIR             指定本地 FLUX 权重目录(包含 flow 与 ae)"
     echo "      --model_path PATH       Qwen-Image: 指定模型 checkpoint 路径"
     echo "      --qwen_env PATH         Qwen-Image: 覆盖默认 Conda 环境路径"
@@ -221,6 +225,10 @@ while [[ $# -gt 0 ]]; do
             HICACHE_SCALE_FACTOR="$2"
             shift 2
             ;;
+        --rel_l1_thresh)
+            REL_L1_THRESH="$2"
+            shift 2
+            ;;
         --fresh_threshold)
             CLUSCA_FRESH_THRESHOLD="$2"
             shift 2
@@ -317,9 +325,9 @@ if [[ "$BACKEND" == "qwen-image" ]]; then
 fi
 
 if [[ "$BACKEND" == "flux" ]]; then
-    if [[ "$MODE" != "Taylor" && "$MODE" != "Taylor-Scaled" && "$MODE" != "HiCache" && "$MODE" != "HiCache-Analytic" && "$MODE" != "original" && "$MODE" != "ToCa" && "$MODE" != "Delta" && "$MODE" != "collect" && "$MODE" != "ClusCa" && "$MODE" != "Hi-ClusCa" ]]; then
+    if [[ "$MODE" != "TeaCache" && "$MODE" != "Taylor" && "$MODE" != "Taylor-Scaled" && "$MODE" != "HiCache" && "$MODE" != "HiCache-Analytic" && "$MODE" != "original" && "$MODE" != "ToCa" && "$MODE" != "Delta" && "$MODE" != "collect" && "$MODE" != "ClusCa" && "$MODE" != "Hi-ClusCa" ]]; then
         echo "错误: 不支持的模式 '$MODE'"
-        echo "支持的模式: Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa"
+        echo "支持的模式: TeaCache, Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa"
         exit 1
     fi
 elif [[ "$BACKEND" == "chipmunk" ]]; then
@@ -625,6 +633,7 @@ if [[ "$BACKEND" == "flux" ]]; then
         --num_steps "$NUM_STEPS"
         --limit "$LIMIT"
         --hicache_scale "$HICACHE_SCALE_FACTOR"
+        --rel_l1_thresh "$REL_L1_THRESH"
         --model_name "$MODEL_NAME"
     )
     SAMPLE_ARGS+=(--true_cfg_scale "$TRUE_CFG_SCALE")
@@ -660,6 +669,7 @@ elif [[ "$BACKEND" == "chipmunk" ]]; then
             --max_order "$MAX_ORDER"
             --first_enhance "$FIRST_ENHANCE"
             --hicache_scale "$HICACHE_SCALE_FACTOR"
+            --rel_l1_thresh "$REL_L1_THRESH"
         )
     fi
 else
@@ -671,6 +681,7 @@ else
         --height "$HEIGHT"
         --num_steps "$NUM_STEPS"
         --hicache_scale "$HICACHE_SCALE_FACTOR"
+        --rel_l1_thresh "$REL_L1_THRESH"
     )
     if [[ -n "$QWEN_MODEL_PATH" ]]; then
         SAMPLE_ARGS+=(--model_path "$QWEN_MODEL_PATH")

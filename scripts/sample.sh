@@ -63,6 +63,7 @@ NEGATIVE_PROMPT=""            # 单个负向 prompt（对所有 prompt 生效）
 NEGATIVE_PROMPT_SET=false
 NEGATIVE_PROMPT_FILE=""       # 逐行负向 prompt 文件（与 prompt_file 行数对齐）
 HICACHE_SCALE_FACTOR="0.7"
+REL_L1_THRESH="0.6"
 ANALYTIC_SIGMA_ALPHA=""
 ANALYTIC_SIGMA_MAX=""
 ANALYTIC_SIGMA_BETA=""
@@ -100,6 +101,7 @@ echo "  -p, --prompt_file FILE    提示文件 [默认: resources/prompts/prompt
     echo "  -s, --num_steps STEPS     采样步数 [默认: 50]"
     echo "  -l, --limit LIMIT         测试数量限制 [默认: 10]"
     echo "  --hicache_scale FACTOR    HiCache多项式缩放因子 [默认: 0.5]"
+    echo "  --rel_l1_thresh THRESH.   TeaCache的阈值 [默认: 0.6]"
     echo "  --first_enhance N         初始增强步数 (前 N 步强制 full) [默认: 3]"
     echo "  --start_index N            结果文件编号偏移量 [默认: 0]"
     echo "  --clusca_fresh_threshold N  ClusCa: fresh 阈值 [默认: 5]"
@@ -181,6 +183,10 @@ while [[ $# -gt 0 ]]; do
             HICACHE_SCALE_FACTOR="$2"
             shift 2
             ;;
+        --rel_l1_thresh)
+            REL_L1_THRESH="$2"
+            shift 2
+            ;;
         --first_enhance)
             FIRST_ENHANCE="$2"
             shift 2
@@ -246,9 +252,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 # 验证模式
-if [[ "$MODE" != "Taylor" && "$MODE" != "Taylor-Scaled" && "$MODE" != "HiCache" && "$MODE" != "HiCache-Analytic" && "$MODE" != "original" && "$MODE" != "ToCa" && "$MODE" != "Delta" && "$MODE" != "collect" && "$MODE" != "ClusCa" && "$MODE" != "Hi-ClusCa" ]]; then
+if [[ "$MODE" != "TeaCache" && "$MODE" != "Taylor" && "$MODE" != "Taylor-Scaled" && "$MODE" != "HiCache" && "$MODE" != "HiCache-Analytic" && "$MODE" != "original" && "$MODE" != "ToCa" && "$MODE" != "Delta" && "$MODE" != "collect" && "$MODE" != "ClusCa" && "$MODE" != "Hi-ClusCa" ]]; then
     echo "错误: 不支持的模式 '$MODE'"
-    echo "支持的模式: Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa"
+    echo "支持的模式: TeaCache, Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa"
     exit 1
 fi
 
@@ -525,6 +531,7 @@ python "$PROJECT_ROOT/models/flux/src/sample.py" \
   --seed 0 \
   --start_index "$START_INDEX" \
   --hicache_scale "$HICACHE_SCALE_FACTOR" \
+  --rel_l1_thresh "$REL_L1_THRESH"\
   "${CLUSCA_ARGS[@]}" \
   "${ANALYTIC_ARGS[@]}" \
   "${CFG_ARGS[@]}"

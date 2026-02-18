@@ -39,6 +39,7 @@ class SamplingOptions:
     max_order: int  # Maximum order of Taylor expansion
     first_enhance: int  # Initial enhancement steps
     hicache_scale: float  # HiCache scaling factor
+    rel_l1_thresh: float
     # ClusCa parameters
     clusca_fresh_threshold: int  # ClusCa fresh threshold
     clusca_cluster_num: int  # Number of clusters for ClusCa
@@ -227,6 +228,7 @@ def main(opts: SamplingOptions):
                             max_order=opts.max_order,
                             first_enhance=opts.first_enhance,
                             hicache_scale=opts.hicache_scale,
+                            rel_l1_thresh = opts.rel_l1_thresh,
                             # ClusCa parameters
                             clusca_fresh_threshold=opts.clusca_fresh_threshold,
                             clusca_cluster_num=opts.clusca_cluster_num,
@@ -262,6 +264,7 @@ def main(opts: SamplingOptions):
                             max_order=opts.max_order,
                             first_enhance=opts.first_enhance,
                             hicache_scale=opts.hicache_scale,
+                            rel_l1_thresh = opts.rel_l1_thresh,
                             # ClusCa parameters
                             clusca_fresh_threshold=opts.clusca_fresh_threshold,
                             clusca_cluster_num=opts.clusca_cluster_num,
@@ -627,6 +630,7 @@ def app():
         default="original",
         choices=[
             "original",
+            "TeaCache",
             "ToCa",
             "Taylor",
             "Taylor-Scaled",
@@ -643,6 +647,7 @@ def app():
     parser.add_argument("--max_order", type=int, default=5, help="Maximum order of Taylor expansion.")
     parser.add_argument("--first_enhance", type=int, default=5, help="Initial enhancement steps.")
     parser.add_argument("--hicache_scale", type=float, default=1.0, help="HiCache scaling factor.")
+    parser.add_argument("--rel_l1_thresh",type=float, default=0.6, help="TeaCache threshold." )
     # ClusCa arguments
     parser.add_argument(
         "--clusca_fresh_threshold",
@@ -774,6 +779,7 @@ def app():
         max_order=args.max_order,
         first_enhance=args.first_enhance,
         hicache_scale=args.hicache_scale,
+        rel_l1_thresh=args.rel_l1_thresh,
         # ClusCa parameters
         clusca_fresh_threshold=args.clusca_fresh_threshold,
         clusca_cluster_num=args.clusca_cluster_num,

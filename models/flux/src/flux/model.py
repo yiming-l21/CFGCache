@@ -112,9 +112,37 @@ class Flux(nn.Module):
 
         ids = torch.cat((txt_ids, img_ids), dim=1)
         pe = self.pe_embedder(ids)
-
+        # -------------------------
+        # TeaCache: compute gating signal BEFORE cal_type (paper-faithful)
+        # -------------------------
+        if cache_dic is not None and cache_dic.get("mode") == "TeaCache":
+            tc = cache_dic.get("teacache", None)
+            if tc is not None and cache_dic.get("teacache_enable", True):
+                # gating uses image-stream modulated input of the FIRST double block
+                blk0 = self.double_blocks[0]
+                with torch.no_grad():
+                    img_mod1, _ = blk0.img_mod(vec)                 # ModulationOut for norm1
+                    img_normed = blk0.img_norm1(img)                # LayerNorm(img)
+                    img_modulated = (1 + img_mod1.scale) * img_normed + img_mod1.shift
+                current["teacache_modulated_inp"] = img_modulated.detach()
         cal_type(cache_dic=cache_dic, current=current)
+        # -------------------------
+        # TeaCache: if skip, reuse residual and return
+        # -------------------------
+        if cache_dic is not None and cache_dic.get("mode") == "TeaCache":
+            tc = cache_dic["teacache"]
 
+            # If residual not ready, never skip (paper: first step always full anyway)
+            if current.get("type") == "TeaCacheSkip" and tc.get("previous_residual", None) is not None:
+                # base img is the pre-block image hidden (img_in output)
+                img = img + tc["previous_residual"]          # (B, N_img, D)
+                img = self.final_layer(img, vec)
+                return img
+            else:
+                # full step: remember base img for residual update at the end
+                tc["base_img"] = img.detach()
+
+                
         for i, block in enumerate(self.double_blocks):
             current["layer"] = i
             img, txt = block(img=img, txt=txt, vec=vec, pe=pe, cache_dic=cache_dic, current=current)
@@ -136,7 +164,10 @@ class Flux(nn.Module):
                 cache_dic["Delta-Cache"] = img - delta_base
 
         img = img[:, txt.shape[1] :, ...]
-
+        if cache_dic is not None and cache_dic.get("mode") == "TeaCache":
+            tc = cache_dic["teacache"]
+            base = tc.pop("base_img")
+            tc["previous_residual"] = (img - base).detach()
         img = self.final_layer(img, vec)  # (N, T, patch_size ** 2 * out_channels)
         return img
 
