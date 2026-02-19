@@ -17,7 +17,7 @@ from flux.modules.cache_functions import (
 
 from flux.taylor_utils import taylor_formula, derivative_approximation, taylor_cache_init
 from flux.cluster_utils import get_cluster_info
-
+from flux.fastercache_utils import _get_fr,_layer_key
 
 class EmbedND(nn.Module):
     def __init__(self, dim: int, theta: int, axes_dim: list[int]):
@@ -214,46 +214,70 @@ class DoubleStreamBlock(nn.Module):
             if (current["type"] == "full") or (current["type"] == "Delta-Cache"):
                 img_mod1, img_mod2 = self.img_mod(vec)
                 txt_mod1, txt_mod2 = self.txt_mod(vec)
+                # run actual attention (DFR hook)
+                reuse_type = current.get("reuse_type", "attn_full")
+                w = float(current.get("dfr_w", 0.0))
 
+                fr = cache_dic.get("fastercache", {}).get("reuse", None)
+                key = _layer_key(current, "joint_attn")
+
+                use_dfr = (
+                    cache_dic.get("mode") == "FasterCache"
+                    and fr is not None
+                    and fr.get("enabled", False)
+                    and (reuse_type == "attn_reuse")
+                    and (key in fr.get("has_prev2", set()))
+                )
                 current["module"] = "attn"
 
                 taylor_cache_init(cache_dic=cache_dic, current=current)
-                # prepare image for attention
-                img_modulated = self.img_norm1(img)
-                img_modulated = (1 + img_mod1.scale) * img_modulated + img_mod1.shift
-                img_qkv = self.img_attn.qkv(img_modulated)
-                img_q, img_k, img_v = rearrange(img_qkv, "B L (K H D) -> K B H L D", K=3, H=self.num_heads)
+                if not use_dfr:
+                    # prepare image for attention
+                    img_modulated = self.img_norm1(img)
+                    img_modulated = (1 + img_mod1.scale) * img_modulated + img_mod1.shift
+                    img_qkv = self.img_attn.qkv(img_modulated)
+                    img_q, img_k, img_v = rearrange(img_qkv, "B L (K H D) -> K B H L D", K=3, H=self.num_heads)
 
-                if cache_dic["cache_type"] == "k-norm":
-                    img_k_norm = img_k.norm(dim=-1, p=2).mean(dim=1)
-                    cache_dic["k-norm"][-1][current["stream"]][current["layer"]]["img_mlp"] = img_k_norm
-                elif cache_dic["cache_type"] == "v-norm":
-                    img_v_norm = img_v.norm(dim=-1, p=2).mean(dim=1)
-                    cache_dic["v-norm"][-1][current["stream"]][current["layer"]]["img_mlp"] = img_v_norm
+                    if cache_dic["cache_type"] == "k-norm":
+                        img_k_norm = img_k.norm(dim=-1, p=2).mean(dim=1)
+                        cache_dic["k-norm"][-1][current["stream"]][current["layer"]]["img_mlp"] = img_k_norm
+                    elif cache_dic["cache_type"] == "v-norm":
+                        img_v_norm = img_v.norm(dim=-1, p=2).mean(dim=1)
+                        cache_dic["v-norm"][-1][current["stream"]][current["layer"]]["img_mlp"] = img_v_norm
 
-                img_q, img_k = self.img_attn.norm(img_q, img_k, img_v)
+                    img_q, img_k = self.img_attn.norm(img_q, img_k, img_v)
 
-                # prepare txt for attention
-                txt_modulated = self.txt_norm1(txt)
-                txt_modulated = (1 + txt_mod1.scale) * txt_modulated + txt_mod1.shift
-                txt_qkv = self.txt_attn.qkv(txt_modulated)
-                txt_q, txt_k, txt_v = rearrange(txt_qkv, "B L (K H D) -> K B H L D", K=3, H=self.num_heads)
+                    # prepare txt for attention
+                    txt_modulated = self.txt_norm1(txt)
+                    txt_modulated = (1 + txt_mod1.scale) * txt_modulated + txt_mod1.shift
+                    txt_qkv = self.txt_attn.qkv(txt_modulated)
+                    txt_q, txt_k, txt_v = rearrange(txt_qkv, "B L (K H D) -> K B H L D", K=3, H=self.num_heads)
 
-                if cache_dic["cache_type"] == "k-norm":
-                    txt_k_norm = txt_k.norm(dim=-1, p=2).mean(dim=1)
-                    cache_dic["k-norm"][-1][current["stream"]][current["layer"]]["txt_mlp"] = txt_k_norm
-                elif cache_dic["cache_type"] == "v-norm":
-                    txt_v_norm = txt_v.norm(dim=-1, p=2).mean(dim=1)
-                    cache_dic["v-norm"][-1][current["stream"]][current["layer"]]["txt_mlp"] = txt_v_norm
+                    if cache_dic["cache_type"] == "k-norm":
+                        txt_k_norm = txt_k.norm(dim=-1, p=2).mean(dim=1)
+                        cache_dic["k-norm"][-1][current["stream"]][current["layer"]]["txt_mlp"] = txt_k_norm
+                    elif cache_dic["cache_type"] == "v-norm":
+                        txt_v_norm = txt_v.norm(dim=-1, p=2).mean(dim=1)
+                        cache_dic["v-norm"][-1][current["stream"]][current["layer"]]["txt_mlp"] = txt_v_norm
 
-                txt_q, txt_k = self.txt_attn.norm(txt_q, txt_k, txt_v)
+                    txt_q, txt_k = self.txt_attn.norm(txt_q, txt_k, txt_v)
 
-                # run actual attention
-                q = torch.cat((txt_q, img_q), dim=2)
-                k = torch.cat((txt_k, img_k), dim=2)
-                v = torch.cat((txt_v, img_v), dim=2)
+                    # run actual attention
+                    q = torch.cat((txt_q, img_q), dim=2)
+                    k = torch.cat((txt_k, img_k), dim=2)
+                    v = torch.cat((txt_v, img_v), dim=2)
 
-                attn = attention(q, k, v, pe=pe, cache_dic=cache_dic, current=current)
+                    attn = attention(q, k, v, pe=pe, cache_dic=cache_dic, current=current)
+                    if cache_dic.get("mode")=="FasterCache" and fr and fr.get("enabled", False):
+                        if key in fr.get("has_prev", set()):
+                            fr["attn_prev2"][key] = fr["attn_prev"][key]
+                            fr.setdefault("has_prev2", set()).add(key)
+                        fr["attn_prev"][key] = attn.detach()
+                        fr.setdefault("has_prev", set()).add(key)
+                else:
+                    F1 = fr["attn_prev"][key]
+                    F2 = fr["attn_prev2"][key]
+                    attn = F1 + (F1 - F2) * w
                 # cache_dic['cache'][-1]['double_stream'][current['layer']]['attn'] = attn
                 # derivative_approximation(cache_dic=cache_dic, current=current, feature=attn)
 
@@ -543,21 +567,47 @@ class SingleStreamBlock(nn.Module):
                 force_init(cache_dic=cache_dic, current=current, tokens=mlp)
                 current["module"] = "attn"
                 taylor_cache_init(cache_dic=cache_dic, current=current)
-                q, k, v = rearrange(qkv, "B L (K H D) -> K B H L D", K=3, H=self.num_heads)
-
-                if cache_dic["cache_type"] == "k-norm":
-                    cache_dic["k-norm"][-1][current["stream"]][current["layer"]]["total"] = k.norm(
-                        dim=-1, p=2
-                    ).mean(dim=1)
-                elif cache_dic["cache_type"] == "v-norm":
-                    cache_dic["v-norm"][-1][current["stream"]][current["layer"]]["total"] = v.norm(
-                        dim=-1, p=2
-                    ).mean(dim=1)
-
-                q, k = self.norm(q, k, v)
 
                 # compute attention
-                attn = attention(q, k, v, pe=pe, cache_dic=cache_dic, current=current)
+                # compute attention (DFR hook)
+                reuse_type = current.get("reuse_type", "attn_full")
+                w = float(current.get("dfr_w", 0.0))
+
+                fr = cache_dic.get("fastercache", {}).get("reuse", None)
+                key = _layer_key(current, "attn")
+
+                if (cache_dic.get("mode") == "FasterCache"
+                    and fr is not None and fr.get("enabled", False)
+                    and reuse_type == "attn_reuse"
+                    and (key in fr.get("has_prev2", set()))):
+
+                    # 用“过去两次 full attention”的差做 bias：F ≈ F_prev + (F_prev - F_prev2)*w
+                    F1 = fr["attn_prev"][key]   # 最近一次 full
+                    F2 = fr["attn_prev2"][key]  # 上上次 full
+                    attn = F1 + (F1 - F2) * w
+
+                else:
+                    q, k, v = rearrange(qkv, "B L (K H D) -> K B H L D", K=3, H=self.num_heads)
+                    if cache_dic["cache_type"] == "k-norm":
+                        cache_dic["k-norm"][-1][current["stream"]][current["layer"]]["total"] = k.norm(
+                            dim=-1, p=2
+                        ).mean(dim=1)
+                    elif cache_dic["cache_type"] == "v-norm":
+                        cache_dic["v-norm"][-1][current["stream"]][current["layer"]]["total"] = v.norm(
+                            dim=-1, p=2
+                        ).mean(dim=1)
+
+                    q, k = self.norm(q, k, v)
+                    attn = attention(q, k, v, pe=pe, cache_dic=cache_dic, current=current)
+
+                    # 更新 DFR cache：只在 full timestep 存
+                    if cache_dic.get("mode") == "FasterCache" and fr and fr.get("enabled", False):
+                        if key in fr.get("has_prev", set()):
+                            fr["attn_prev2"][key] = fr["attn_prev"][key]
+                            fr.setdefault("has_prev2", set()).add(key)
+                        fr["attn_prev"][key] = attn.detach()
+                        fr.setdefault("has_prev", set()).add(key)
+
                 force_init(cache_dic=cache_dic, current=current, tokens=attn)
 
                 cache_dic["cache"][-1]["single_stream"][current["layer"]]["attn"] = attn

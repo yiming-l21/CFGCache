@@ -27,8 +27,8 @@ BACKEND="flux"
 PYTHON_PATH=""
 
 # 默认配置
-MODE="TeaCache"  # TeaCache, Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa
-GPU_LIST="5"
+MODE="FasterCache"  # TeaCache, Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa, FasterCache
+GPU_LIST="3"
 MODE_SET=false
 MODEL_NAME="flux-dev"  # flux-dev | flux-schnell
 INTERVAL="7"
@@ -47,7 +47,7 @@ NEGATIVE_PROMPT_SET=true
 NEGATIVE_PROMPT_FILE=""       # 逐行负向 prompt（与 prompt_file 行数对齐）
 GUIDANCE=3.5
 HICACHE_SCALE_FACTOR="0.5"
-REL_L1_THRESH="0.8"
+REL_L1_THRESH="1.0"
 FIRST_ENHANCE="3"
 PROMPT_FILE_DEFAULT_FLUX="$PROJECT_ROOT/resources/prompts/prompt.txt"
 PROMPT_FILE_DEFAULT_QWEN="$PROJECT_ROOT/models/qwen_image/prompts/DrawBench200.txt"
@@ -325,9 +325,9 @@ if [[ "$BACKEND" == "qwen-image" ]]; then
 fi
 
 if [[ "$BACKEND" == "flux" ]]; then
-    if [[ "$MODE" != "TeaCache" && "$MODE" != "Taylor" && "$MODE" != "Taylor-Scaled" && "$MODE" != "HiCache" && "$MODE" != "HiCache-Analytic" && "$MODE" != "original" && "$MODE" != "ToCa" && "$MODE" != "Delta" && "$MODE" != "collect" && "$MODE" != "ClusCa" && "$MODE" != "Hi-ClusCa" ]]; then
+    if [[ "$MODE" != "FasterCache" && "$MODE" != "TeaCache" && "$MODE" != "Taylor" && "$MODE" != "Taylor-Scaled" && "$MODE" != "HiCache" && "$MODE" != "HiCache-Analytic" && "$MODE" != "original" && "$MODE" != "ToCa" && "$MODE" != "Delta" && "$MODE" != "collect" && "$MODE" != "ClusCa" && "$MODE" != "Hi-ClusCa" ]]; then
         echo "错误: 不支持的模式 '$MODE'"
-        echo "支持的模式: TeaCache, Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa"
+        echo "支持的模式: TeaCache, Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa, FasterCache"
         exit 1
     fi
 elif [[ "$BACKEND" == "chipmunk" ]]; then

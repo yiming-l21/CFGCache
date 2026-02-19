@@ -197,7 +197,7 @@ def main(opts: SamplingOptions):
                 if opts.test_FLOPs:
                     x = denoise_test_FLOPs(
                         model,
-                        **inp,
+                        **inp_cond,
                         timesteps=timesteps,
                         guidance=opts.guidance,
                         cache_mode=opts.cache_mode,
@@ -248,6 +248,8 @@ def main(opts: SamplingOptions):
                     else:
                         x = denoise_cache_cfg(
                             model,
+                            height=opts.height,
+                            width=opts.width,
                             img=inp_cond["img"],
                             img_ids=inp_cond["img_ids"],
                             txt=inp_cond["txt"],
@@ -640,6 +642,7 @@ def app():
             "collect",
             "ClusCa",
             "Hi-ClusCa",
+            "FasterCache",
         ],
         help="Cache mode for denoising.",
     )

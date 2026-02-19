@@ -89,9 +89,48 @@ def cache_init(
         cache_dic["soft_fresh_weight"] = 0.0
         cache_dic["max_order"] = 0
         cache_dic["first_enhance"] = 3
+    elif mode == "FasterCache":
+        cache_dic["cache_type"] = "random"       
+        cache_dic["cache_index"] = cache_index
+        cache_dic["cache"] = cache
+        cache_dic["fresh_ratio_schedule"] = "FasterCache"
+        cache_dic["fresh_ratio"] = 0.0
+        cache_dic["fresh_threshold"] = 1
+        cache_dic["force_fresh"] = "global"
+        cache_dic["soft_fresh_weight"] = 0.0
+        cache_dic["max_order"] = 0
+        cache_dic["first_enhance"] = 3
+
+        cache_dic.setdefault("fastercache", {})
+        cache_dic["fastercache"].setdefault("cfg", {})
+        fc = cache_dic["fastercache"]["cfg"]
+        fc.setdefault("enabled", False)
+        fc["warmup"] = int(cache_dic.get("first_enhance", 0))
+        fc["cfg_mode"] = "fft"
+        fc["refresh_period"] = 5          # paper implementation
+        fc["alpha1"] = 0.2                # paper implementation
+        fc["alpha2"] = 0.2                # paper implementation
+        fc["t0_ratio"] = 0.5              
+        fc.setdefault("delta", None)      
+        fc.setdefault("has_delta", False)
+        fc.setdefault("delta_lf", None)
+        fc.setdefault("delta_hf", None)
+        fc.setdefault("has_delta_fft", False)
+        fc.setdefault("cnt", 0)     
+
+        # -------- DFR (dynamic feature reuse) --------
+        cache_dic["fastercache"].setdefault("reuse", {})
+        fr = cache_dic["fastercache"]["reuse"]
+        fr.setdefault("enabled", True)
+        fr["warmup"] = fc["warmup"]
+        fr["refresh_period"] = 2  # alternate timesteps
+        fr.setdefault("cnt", 0)
+        fr.setdefault("attn_prev", {})    # dict[(stream, layer)] = Tensor
+        fr.setdefault("attn_prev2", {})   # dict[(stream, layer)] = Tensor
+        fr.setdefault("has_prev", set())  # set of keys that have prev
+        fr.setdefault("has_prev2", set())
     elif mode == "TeaCache":
-        # ===== 通用字段：避免 cal_type / 其它逻辑 KeyError =====
-        cache_dic["cache_type"] = "random"        # TeaCache 不用 token selection，但保底
+        cache_dic["cache_type"] = "random"        
         cache_dic["cache_index"] = cache_index
         cache_dic["cache"] = cache
 

@@ -112,7 +112,63 @@ def cal_type(cache_dic, current):
             tc["cnt"] = 0
         return
 
+    if cache_dic.get("mode") == "FasterCache":
+        # =========================
+        # FasterCache branch (CFG skip / dynamic reuse scheduler)
+        # =========================
+        fc = cache_dic.get("fastercache", {}).get("cfg", None)
+        fr = cache_dic.get("fastercache", {}).get("reuse", None)
+        step = int(current.get("step", 0))
+        T = int(current.get("num_steps", 0) or 0)
 
+        # -------------------------
+        # (A) CFG-skip scheduler
+        # -------------------------
+        cfg_warmup = T // 3
+        cfg_period = int(fc.get("refresh_period", 5)) if (fc and fc.get("enabled", False)) else 1
+        cfg_period = max(1, cfg_period)
+        if (fc is not None) and fc.get("enabled", False):
+            if step < cfg_warmup:
+                current["cfg_type"] = "cfg_full"         # 必跑 uncond
+                current.setdefault("activated_steps", []).append(step)
+            else:
+                if ((step - cfg_warmup) % cfg_period) == 0:
+                    current["cfg_type"] = "cfg_full"
+                    current.setdefault("activated_steps", []).append(step)
+                else:
+                    current["cfg_type"] = "cfg_skip"     # 用 residual 近似 uncond
+        else:
+            current["cfg_type"] = "cfg_full"             # 未启用 FasterCache CFG 时，默认 full
+
+        # -------------------------
+        # (B) DFR(attn reuse) scheduler  [paper-faithful]
+        # full attn every 2 timesteps from the beginning
+        # Need first two full steps to build prev/prev2
+        # -------------------------
+        dfr_period = int(fr.get("refresh_period", 2)) if (fr and fr.get("enabled", False)) else 2
+        if (fr is not None) and fr.get("enabled", False) and T > 0:
+            # enforce first two full to have prev & prev2
+            if step < 2:
+                current["reuse_type"] = "attn_full"
+            else:
+                # alternate: even steps full, odd steps reuse
+                current["reuse_type"] = "attn_full" if (step % dfr_period == 0) else "attn_reuse"
+        else:
+            current["reuse_type"] = "attn_full"
+
+        # -------------------------
+        # (C) DFR weight w(t): linear ramp from start of reuse -> end
+        # -------------------------
+        if (fr is not None) and fr.get("enabled", False) and T > 0:
+            reuse_begin = 3  # step 3 is the first reuse if step0/1 are full and step2 is full
+            end = max(reuse_begin + 1, T - 1)
+            w = (step - reuse_begin) / float(end - reuse_begin)
+            current["dfr_w"] = float(min(1.0, max(0.0, w)))
+        else:
+            current["dfr_w"] = 0.0
+
+        current["type"] = "full"
+        return
     # 🔥 修复：在 original 模式下，所有步骤都应该是 'full' 类型
     if (
         (cache_dic["fresh_ratio"] == 0.0)
