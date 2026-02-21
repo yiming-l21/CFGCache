@@ -633,6 +633,7 @@ def app():
         choices=[
             "original",
             "TeaCache",
+            "MagCache",
             "ToCa",
             "Taylor",
             "Taylor-Scaled",

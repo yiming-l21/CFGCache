@@ -1,3 +1,4 @@
+import numpy as np
 def cache_init(
     timesteps,
     model_kwargs=None,
@@ -154,7 +155,65 @@ def cache_init(
             "previous_residual": None,          
             "coefficients": [4.98651651e+02, -2.83781631e+02, 5.58554382e+01, -3.82021401e+00, 2.64230861e-01],
         }
+    elif mode == "MagCache":
+        def nearest_interp(src_array, target_length):
+            src_length = len(src_array)
+            if target_length == 1:
+                return np.array([src_array[-1]])
+            scale = (src_length - 1) / (target_length - 1)
+            mapped_indices = np.round(np.arange(target_length) * scale).astype(int)
+            return src_array[mapped_indices]
+        cache_dic["cache_type"] = "random"
+        cache_dic["cache_index"] = cache_index
+        cache_dic["cache"] = cache
+        cache_dic["fresh_ratio_schedule"] = "MagCache"
+        cache_dic["fresh_ratio"] = 0.0          
+        cache_dic["fresh_threshold"] = 1         
+        cache_dic["cal_threshold"] = 1          
+        cache_dic["force_fresh"] = "global"
+        cache_dic["soft_fresh_weight"] = 0.0
+        cache_dic["max_order"] = 0
+        cache_dic["first_enhance"] = 3 
 
+        model_kwargs = model_kwargs or {}
+        base_mag_ratios = np.array([
+            1.00000, 1.15589, 1.03062, 1.06443, 1.05367, 1.03530, 1.03932, 1.02461, 1.02777,
+            1.01864, 1.02197, 1.01830, 1.01566, 1.01181, 1.01239, 1.00975, 1.01173, 1.00840,
+            1.00098, 1.00147, 1.00974, 1.00173, 1.01344, 1.00718, 0.99618, 1.00715, 1.00924,
+            1.00119, 1.00006, 1.00295, 0.99880, 1.01076, 0.99010, 1.00541, 1.00079, 0.99685,
+            0.99504, 0.99612, 0.98827, 0.99784, 0.99364, 0.99299, 0.98553, 0.98508, 0.98461,
+            0.96980, 0.96539, 0.95062, 0.92728, 0.92891,
+        ], dtype=np.float64)
+
+        ratios_in = model_kwargs.get("mag_ratios", base_mag_ratios)
+        ratios_in = np.asarray(ratios_in, dtype=np.float64)
+        T = len(timesteps)  # num_steps
+        if len(ratios_in) != T:
+            ratios_aligned = nearest_interp(ratios_in, T)
+        else:
+            ratios_aligned = ratios_in
+        mc = {
+            "cnt": 0,
+            "num_steps": len(timesteps),
+
+            # === required hyperparams (same names as diffusers demo) ===
+            "K": int(model_kwargs.get("K", 5)),
+            "magcache_thresh": float(model_kwargs.get("magcache_thresh", 0.24)),
+            "retention_ratio": float(model_kwargs.get("retention_ratio", 0.1)),
+
+            # === required state ===
+            "accumulated_ratio": 1.0,
+            "accumulated_err": 0.0,
+            "accumulated_steps": 0,
+
+            # === calibrated ratios ===
+            "mag_ratios": ratios_aligned,
+
+            # === residual cache ===
+            "previous_residual": None,
+        }
+        cache_dic["magcache"] = mc
+        cache_dic["magcache_enable"] = True
     elif mode == "ToCa":
         cache_dic["cache_type"] = "attention"
         cache_dic["cache_index"] = cache_index

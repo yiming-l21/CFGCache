@@ -27,8 +27,8 @@ BACKEND="flux"
 PYTHON_PATH=""
 
 # 默认配置
-MODE="FasterCache"  # TeaCache, Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa, FasterCache
-GPU_LIST="3"
+MODE="MagCache"  # TeaCache, MagCache, Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa, FasterCache
+GPU_LIST="6"
 MODE_SET=false
 MODEL_NAME="flux-dev"  # flux-dev | flux-schnell
 INTERVAL="7"
@@ -85,7 +85,7 @@ show_help() {
     echo "用法: $0 [选项]"
     echo "选项:"
     echo "      --backend BACKEND       运行后端 (flux|qwen-image|chipmunk) [默认: flux]"
-    echo "  -m, --mode MODE             缓存模式 (Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa)"
+    echo "  -m, --mode MODE             缓存模式 (TeaCache, MagCache, Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa, FasterCache)"
     echo "      --model_name NAME       FLUX 模型 (flux-dev|flux-schnell) [默认: flux-dev]"
     echo "  -i, --interval N            采样间隔 [默认: 5]"
     echo "  -o, --max_order N           泰勒最大阶数 [默认: 2]"
@@ -325,9 +325,9 @@ if [[ "$BACKEND" == "qwen-image" ]]; then
 fi
 
 if [[ "$BACKEND" == "flux" ]]; then
-    if [[ "$MODE" != "FasterCache" && "$MODE" != "TeaCache" && "$MODE" != "Taylor" && "$MODE" != "Taylor-Scaled" && "$MODE" != "HiCache" && "$MODE" != "HiCache-Analytic" && "$MODE" != "original" && "$MODE" != "ToCa" && "$MODE" != "Delta" && "$MODE" != "collect" && "$MODE" != "ClusCa" && "$MODE" != "Hi-ClusCa" ]]; then
+    if [[ "$MODE" != "FasterCache" && "$MODE" != "TeaCache" && "$MODE" != "MagCache" &&"$MODE" != "Taylor" && "$MODE" != "Taylor-Scaled" && "$MODE" != "HiCache" && "$MODE" != "HiCache-Analytic" && "$MODE" != "original" && "$MODE" != "ToCa" && "$MODE" != "Delta" && "$MODE" != "collect" && "$MODE" != "ClusCa" && "$MODE" != "Hi-ClusCa" ]]; then
         echo "错误: 不支持的模式 '$MODE'"
-        echo "支持的模式: TeaCache, Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa, FasterCache"
+        echo "支持的模式: TeaCache, MagCache, Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa, FasterCache"
         exit 1
     fi
 elif [[ "$BACKEND" == "chipmunk" ]]; then

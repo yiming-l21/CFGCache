@@ -125,6 +125,7 @@ class Flux(nn.Module):
                     img_normed = blk0.img_norm1(img)                # LayerNorm(img)
                     img_modulated = (1 + img_mod1.scale) * img_normed + img_mod1.shift
                 current["teacache_modulated_inp"] = img_modulated.detach()
+
         cal_type(cache_dic=cache_dic, current=current)
         # -------------------------
         # TeaCache: if skip, reuse residual and return
@@ -142,6 +143,23 @@ class Flux(nn.Module):
                 # full step: remember base img for residual update at the end
                 tc["base_img"] = img.detach()
 
+        if cache_dic is not None and cache_dic.get("mode") == "MagCache":
+            mc = cache_dic["magcache"]
+
+            # reset at step 0 
+            if current is not None and int(current.get("step", 0)) == 0:
+                mc["cnt"] = 0
+                mc["accumulated_ratio"] = 1.0
+                mc["accumulated_err"] = 0.0
+                mc["accumulated_steps"] = 0
+                mc["previous_residual"] = None
+
+            if current.get("type") == "MagCacheSkip" and mc.get("previous_residual", None) is not None:
+                img = img + mc["previous_residual"]  
+                img = self.final_layer(img, vec)
+                return img
+            else:
+                mc["base_img"] = img
                 
         for i, block in enumerate(self.double_blocks):
             current["layer"] = i
@@ -168,6 +186,15 @@ class Flux(nn.Module):
             tc = cache_dic["teacache"]
             base = tc.pop("base_img")
             tc["previous_residual"] = (img - base).detach()
+        # -------------------------
+        # MagCache: update residual & norm for next-step gating
+        # -------------------------
+        if cache_dic is not None and cache_dic.get("mode") == "MagCache":
+            mc = cache_dic["magcache"]
+            base = mc.pop("base_img", None)
+            if base is not None:
+                r = (img - base).detach()
+                mc["previous_residual"] = r
         img = self.final_layer(img, vec)  # (N, T, patch_size ** 2 * out_channels)
         return img
 

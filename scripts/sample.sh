@@ -46,7 +46,7 @@ fi
 echo "[INFO] 使用 Python: $(command -v python)"
 
 # 默认值
-MODE="Taylor" # Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa
+MODE="Taylor" # TeaCache,MagCache, Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa, FasterCache
 MODEL_NAME="flux-dev" # flux-dev |  
 INTERVAL="5"
 MAX_ORDER="2"
@@ -86,7 +86,7 @@ CLUSCA_PROPAGATION_RATIO=0.005  # 特征传播比例
 show_help() {
     echo "用法: $0 [选项]"
     echo "选项:"
-    echo "  -m, --mode MODE           缓存模式 (Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa) [默认: Taylor]"
+    echo "  -m, --mode MODE           缓存模式 (TeaCache,MagCache, Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa, FasterCache) [默认: Taylor]"
     echo "  --model_name NAME         FLUX 模型 (flux-dev|flux-schnell) [默认: flux-dev]"
     echo "  --model_dir DIR          指定本地 FLUX 权重目录(包含 flow 与 ae)"
     echo "  --true_cfg_scale VAL        True CFG scale (>1 启用 true CFG) [默认: 1.0]"
@@ -252,9 +252,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 # 验证模式
-if [[ "$MODE" != "FasterCache" && "$MODE" != "TeaCache" && "$MODE" != "Taylor" && "$MODE" != "Taylor-Scaled" && "$MODE" != "HiCache" && "$MODE" != "HiCache-Analytic" && "$MODE" != "original" && "$MODE" != "ToCa" && "$MODE" != "Delta" && "$MODE" != "collect" && "$MODE" != "ClusCa" && "$MODE" != "Hi-ClusCa" ]]; then
+if [[ "$MODE" != "FasterCache" && "$MODE" != "TeaCache" && "$MODE" != "MagCache" && "$MODE" != "Taylor" && "$MODE" != "Taylor-Scaled" && "$MODE" != "HiCache" && "$MODE" != "HiCache-Analytic" && "$MODE" != "original" && "$MODE" != "ToCa" && "$MODE" != "Delta" && "$MODE" != "collect" && "$MODE" != "ClusCa" && "$MODE" != "Hi-ClusCa" ]]; then
     echo "错误: 不支持的模式 '$MODE'"
-    echo "支持的模式: TeaCache, Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa, FasterCache"
+    echo "支持的模式: TeaCache, MagCache, Taylor, Taylor-Scaled, HiCache, HiCache-Analytic, original, ToCa, Delta, collect, ClusCa, Hi-ClusCa, FasterCache"
     exit 1
 fi
 

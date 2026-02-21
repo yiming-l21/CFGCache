@@ -266,6 +266,7 @@ def denoise_cache_cfg(
         T = warmup = t0_step = 0
         alpha1 = alpha2 = 0.0
 
+
     # --------- main sampling loop ----------
     for t_curr, t_prev in zip(timesteps[:-1], timesteps[1:]):
         t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
@@ -369,7 +370,7 @@ def denoise_cache_cfg(
             pred = pred_uncond + true_cfg_scale * (pred_cond - pred_uncond)
         else:
             pred = pred_cond
-
+        
         img = img + (t_prev - t_curr) * pred
 
         current_cond["step"] += 1

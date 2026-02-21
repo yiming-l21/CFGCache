@@ -1,5 +1,5 @@
 from .force_scheduler import force_scheduler
-
+import numpy as np
 
 def cal_type(cache_dic, current):
     """
@@ -111,7 +111,45 @@ def cal_type(cache_dic, current):
         if T > 0 and tc["cnt"] == T:
             tc["cnt"] = 0
         return
+    if cache_dic.get("mode") == "MagCache":
+        mc = cache_dic["magcache"]
+        step = int(current.get("step", 0))
+        T = int(mc["num_steps"])
+        current["type"] = "full"
 
+        if mc.get("previous_residual", None) is None:
+            current.setdefault("activated_steps", []).append(step)
+            mc["cnt"] = (mc["cnt"] + 1) % max(1, T)
+            return
+
+        skip_forward = False
+        if mc["cnt"] >= int(mc["retention_ratio"] * mc["num_steps"] + 0.5):
+            cur_scale = float(mc["mag_ratios"][mc["cnt"]])
+            mc["accumulated_ratio"] *= cur_scale
+            mc["accumulated_steps"] += 1
+            mc["accumulated_err"] += float(np.abs(1.0 - mc["accumulated_ratio"]))
+
+            mapped = int(np.round(mc["cnt"] * ((28 - 1) / (mc["num_steps"] - 1)))) if mc["num_steps"] > 1 else mc["cnt"]
+
+            if (mc["accumulated_err"] <= mc["magcache_thresh"]
+                and mc["accumulated_steps"] <= mc["K"]
+                and mapped != 11):
+                skip_forward = True
+            else:
+                mc["accumulated_ratio"] = 1.0
+                mc["accumulated_steps"] = 0
+                mc["accumulated_err"] = 0.0
+
+        if skip_forward:
+            current["type"] = "MagCacheSkip"
+        else:
+            current["type"] = "full"
+            current.setdefault("activated_steps", []).append(step)
+
+        mc["cnt"] = (mc["cnt"] + 1) % max(1, T)
+        return
+
+        
     if cache_dic.get("mode") == "FasterCache":
         # =========================
         # FasterCache branch (CFG skip / dynamic reuse scheduler)
